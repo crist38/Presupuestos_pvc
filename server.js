@@ -68,8 +68,39 @@ function odoo(req, model, method, args, kwargs = {}) {
   ]);
 }
 
+
 // ── PDF Parsing ───────────────────────────────────────────────────────────────
-function parsePdfText(text) {
+function cleanColor(c) {
+  if (!c) return 'Nogal';
+  c = c.trim();
+  const cLower = c.toLowerCase();
+  if (cLower.includes('nogal')) return 'Nogal';
+  if (cLower.includes('roble') || cLower.includes('golden')) return 'Roble dorado';
+  if (cLower.includes('blanco')) return 'Blanco';
+  if (cLower.includes('negro') || cLower.includes('grafito')) return 'Negro';
+  return c;
+}
+
+function detectFormat(text) {
+  if (text.includes("COMPONENTE") && text.includes("DIMENSIONES")) {
+    return "format3";
+  }
+  if (text.includes("Item:V") && text.includes("Unitario:")) {
+    return "sodival_cotizacion";
+  }
+  if (text.includes("Pos.TipoCódigoDimensionesCantidadUnitTotal")) {
+    return "format2_roberto_multi";
+  }
+  if (text.includes("Pos. ") && text.includes("Ancho:") && text.includes("Alto:")) {
+    return "format2_gustavo";
+  }
+  if (text.includes("Medida:") && text.includes("Série:")) {
+    return "format2_roberto";
+  }
+  return "format1";
+}
+
+function parseFormat1(text) {
   const lines = text.split('\n');
   const items = [];
   let currentBlock = [];
@@ -77,11 +108,11 @@ function parsePdfText(text) {
   for (const line of lines) {
     currentBlock.push(line);
 
-    if (/Pos:\s*V\d+/.test(line)) {
+    if (/Pos:\s*(V|PV|P)\d+/i.test(line)) {
       const block = currentBlock.join('\n');
       currentBlock = [];
 
-      const posMatch = block.match(/Pos:\s*(V\d+)/);
+      const posMatch = block.match(/Pos:\s*((?:V|PV|P)\d+)/i);
       const medMatch = block.match(/(\d[\d.,]*)\s*mm\s*[xX]\s*(\d[\d.,]*)\s*mm/);
 
       if (!posMatch || !medMatch) continue;
@@ -93,8 +124,7 @@ function parsePdfText(text) {
       let color = 'Roble dorado';
       const colorMatch = block.match(/Color:\s*([^\n\t]+?)(?:\s{2,}|\t|Unidades:|$)/im);
       if (colorMatch) {
-        color = colorMatch[1].trim();
-        if (color === 'Golden Oak') color = 'Roble dorado';
+        color = cleanColor(colorMatch[1]);
       }
 
       let vidrio = '4/9/4 INC';
@@ -103,7 +133,7 @@ function parsePdfText(text) {
 
       let qty = 1;
       const qtyMatch = block.match(/Unidades:\s*(\d+)/i);
-      if (qtyMatch) qty = parseInt(qtyMatch[1]);
+      if (qtyMatch) qty = parseInt(qtyMatch[1], 10);
 
       let price = 0;
       const priceMatches = [...block.matchAll(/\$\s*([\d.,]+)/g)];
@@ -115,10 +145,10 @@ function parsePdfText(text) {
       const blockLower = block.toLowerCase();
       let tipo = 'Fijo';
       if (blockLower.includes('corrediz') || blockLower.includes('corredera')) tipo = 'Corredera';
-      else if (blockLower.includes('practicable') || blockLower.includes('batiente')) tipo = 'Practicable';
+      else if (blockLower.includes('practicable') || blockLower.includes('batiente') || blockLower.includes('proyectante')) tipo = 'Practicable';
 
       let desc = `Ventana ${tipo} ${ancho}x${alto}mm`;
-      const descLine = block.split('\n').find(l => l.match(/(LINEA|Ventana|ECOLIFE|Efficient|Advance)/i));
+      const descLine = block.split('\n').find(l => l.match(/(LINEA|Ventana|ECOLIFE|Efficient|Advance|Puerta)/i));
       if (descLine) desc = descLine.trim();
 
       items.push({ pos, ancho, alto, color, vidrio, qty, price, tipo, desc });
@@ -126,6 +156,383 @@ function parsePdfText(text) {
   }
 
   return items;
+}
+
+function parseFormat2Gustavo(text) {
+  const items = [];
+  const matches = [...text.matchAll(/Pos\.\s*(\d+)(?:\s*-\s*([A-Za-z0-9_,-]+?)(?:Importe|Total|\s|$))?/ig)];
+  const blocks = [];
+  
+  for (let i = 0; i < matches.length; i++) {
+    const start = matches[i].index;
+    const end = (i + 1 < matches.length) ? matches[i+1].index : text.length;
+    blocks.push({
+      posNum: matches[i][1],
+      posCode: matches[i][2] || `V${matches[i][1]}`,
+      block: text.slice(start, end)
+    });
+  }
+
+  for (const itemBlock of blocks) {
+    const block = itemBlock.block;
+    const medMatch = block.match(/Ancho:\s*([\d.,]+)[\s\r\n-]*Alto:\s*([\d.,]+)/i);
+    if (!medMatch) continue;
+
+    const ancho = parseInt(medMatch[1].replace(/\./g, ''), 10);
+    const alto = parseInt(medMatch[2].replace(/\./g, ''), 10);
+
+    let color = 'Nogal';
+    const colorMatch = block.match(/Color:\s*([A-Za-z\s-]+?)(?:Ancho:|$)/i);
+    if (colorMatch) {
+      color = cleanColor(colorMatch[1]);
+    } else {
+      const lines = block.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+      const colorIdx = lines.findIndex(l => l.includes('Color:'));
+      if (colorIdx !== -1 && colorIdx + 1 < lines.length) {
+        color = cleanColor(lines[colorIdx + 1]);
+      }
+    }
+
+    let vidrio = '4/9/4 INC';
+    const glassMatch = block.match(/Vidrios\s*\n([^\n]+)/);
+    if (glassMatch) {
+      vidrio = glassMatch[1].trim();
+      if (vidrio.includes(' -')) {
+        vidrio = vidrio.split(' -')[0].trim();
+      }
+    } else {
+      const lines = block.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+      for (const line of lines) {
+        if (line.toLowerCase().includes('dvh') || line.toLowerCase().includes('vidrio') || line.match(/\d\+\d\+\d/)) {
+          vidrio = line;
+          break;
+        }
+      }
+    }
+
+    let qty = 1;
+    const qtyMatch = block.match(/UDS:\s*(\d+)/i);
+    if (qtyMatch) qty = parseInt(qtyMatch[1], 10);
+
+    let price = 0;
+    const priceLines = block.split('\n');
+    for (let idx = 0; idx < priceLines.length; idx++) {
+      if (priceLines[idx].includes('UDS:')) {
+        for (let k = idx + 1; k < priceLines.length; k++) {
+          const candidate = priceLines[k].replace(/\./g, '').trim();
+          if (/^\d+$/.test(candidate)) {
+            price = parseInt(candidate, 10);
+            break;
+          }
+        }
+        break;
+      }
+    }
+
+    let tipo = 'Fijo';
+    const blockLower = block.toLowerCase();
+    if (blockLower.includes('corrediz') || blockLower.includes('corredera')) tipo = 'Corredera';
+    else if (blockLower.includes('practicable') || blockLower.includes('batiente') || blockLower.includes('proyectante')) tipo = 'Practicable';
+
+    const desc = `Ventana ${tipo} ${ancho}x${alto}mm`;
+
+    items.push({
+      pos: itemBlock.posCode,
+      ancho,
+      alto,
+      color,
+      vidrio,
+      qty,
+      price,
+      tipo,
+      desc
+    });
+  }
+
+  return items;
+}
+
+function parseFormat2Roberto(text) {
+  const items = [];
+  const colorMatch = text.match(/Color:\s*([A-Za-z0-9\s-]+?)(?:\s*Medida:|$)/i);
+  let color = 'Nogal';
+  if (colorMatch) {
+    color = cleanColor(colorMatch[1]);
+  }
+
+  const medMatch = text.match(/Medida:\s*([\d.,]+)\s*[xX]\s*([\d.,]+)/);
+  if (!medMatch) return [];
+
+  const ancho = parseInt(medMatch[1].replace(/\./g, ''), 10);
+  const alto = parseInt(medMatch[2].replace(/\./g, ''), 10);
+
+  let vidrio = '4/9/4 INC';
+  const glassMatch = text.match(/Superficies:\s*([^\n]+)/);
+  if (glassMatch) {
+    vidrio = glassMatch[1].trim();
+    if (vidrio.includes(' -')) {
+      vidrio = vidrio.split(' -')[0].trim();
+    }
+  }
+
+  let qty = 1;
+  let price = 0;
+  const priceMatch = text.match(/V1(\d+)\$\s*([\d.]+)/);
+  if (priceMatch) {
+    qty = parseInt(priceMatch[1], 10);
+    price = parseInt(priceMatch[2].replace(/\./g, ''), 10);
+  }
+
+  let tipo = 'Fijo';
+  if (text.toLowerCase().includes('corredera') || text.toLowerCase().includes('corrediza')) tipo = 'Corredera';
+  
+  items.push({
+    pos: 'V1',
+    ancho,
+    alto,
+    color,
+    vidrio,
+    qty,
+    price,
+    tipo,
+    desc: `Ventana ${tipo} ${ancho}x${alto}mm`
+  });
+
+  return items;
+}
+
+function parseFormat2RobertoMulti(text) {
+  const items = [];
+  const matches = [...text.matchAll(/^\s*(\d+)(V\d+|PV\d+|P\d+)/gm)];
+  const blocks = [];
+
+  for (let i = 0; i < matches.length; i++) {
+    const start = matches[i].index;
+    const end = (i + 1 < matches.length) ? matches[i+1].index : text.length;
+    blocks.push({
+      pos: matches[i][2],
+      block: text.slice(start, end)
+    });
+  }
+
+  for (const itemBlock of blocks) {
+    const block = itemBlock.block;
+    const lMatch = block.match(/L\s*=\s*([\d.]+)/i);
+    const aMatch = block.match(/A\s*=\s*([\d.]+)/i);
+    if (!lMatch || !aMatch) continue;
+
+    const ancho = parseInt(lMatch[1].replace(/\./g, ''), 10);
+    const alto  = parseInt(aMatch[1].replace(/\./g, ''), 10);
+
+    let color = 'Nogal';
+    const colorMatch = block.match(/Color:\s*([^\n\r]+)/i);
+    if (colorMatch) {
+      color = cleanColor(colorMatch[1]);
+    }
+
+    let vidrio = '4/9/4 INC';
+    const glassMatch = block.match(/Vidrio\(s\):\s*([^\n\r]+)/i);
+    if (glassMatch) {
+      vidrio = glassMatch[1].trim();
+      if (vidrio.includes(' -')) {
+        vidrio = vidrio.split(' -')[0].trim();
+      }
+    }
+
+    const firstLine = block.split('\n')[0];
+    let qty = 1;
+    const qtyMatch = firstLine.match(/(\d+)\s*Ch\$/i);
+    if (qtyMatch) {
+      qty = parseInt(qtyMatch[1], 10);
+    }
+
+    let price = 0;
+    const priceMatch = block.match(/Total\s+Item:\s*\n\s*Ch\$\s*([\d.]+)/i);
+    if (priceMatch) {
+      price = parseInt(priceMatch[1].replace(/\./g, ''), 10);
+    } else {
+      const firstLinePrices = [...firstLine.matchAll(/Ch\$\s*([\d.,]+)/gi)];
+      if (firstLinePrices.length) {
+        price = parseInt(firstLinePrices[0][1].replace(/\./g, '').replace(/,/g, ''), 10);
+      }
+    }
+
+    let tipo = 'Fijo';
+    const descMatch = block.match(/Descripción:\s*([^\n\r]+)/i);
+    const desc = descMatch ? descMatch[1].trim() : `Ventana ${ancho}x${alto}mm`;
+    if (desc.toLowerCase().includes('corredera') || desc.toLowerCase().includes('corrediza')) tipo = 'Corredera';
+    else if (desc.toLowerCase().includes('proyectante') || desc.toLowerCase().includes('abatible') || desc.toLowerCase().includes('batiente')) tipo = 'Practicable';
+
+    items.push({
+      pos: itemBlock.pos,
+      ancho,
+      alto,
+      color,
+      vidrio,
+      qty,
+      price: Math.round(price / qty),
+      tipo,
+      desc
+    });
+  }
+
+  return items;
+}
+
+function parseFormat3(text) {
+  const items = [];
+  const matches = [...text.matchAll(/COMPONENTE[\s\r\n]*:[\s\r\n]*(V\d+|PV\d+|P\d+)/ig)];
+  const blocks = [];
+
+  for (let i = 0; i < matches.length; i++) {
+    const start = matches[i].index;
+    const end = (i + 1 < matches.length) ? matches[i+1].index : text.length;
+    blocks.push({
+      pos: matches[i][1],
+      block: text.slice(start, end)
+    });
+  }
+
+  for (const itemBlock of blocks) {
+    const block = itemBlock.block;
+    const medMatch = block.match(/DIMENSIONES[\s\r\n]*:[\s\r\n]*(\d+)\s*mm\s*x\s*(\d+)\s*mm/i);
+    if (!medMatch) continue;
+
+    const ancho = parseInt(medMatch[1], 10);
+    const alto = parseInt(medMatch[2], 10);
+
+    let qty = 1;
+    const qtyMatch = block.match(/CANTIDAD[\s\r\n]*:[\s\r\n]*(\d+)/i);
+    if (qtyMatch) qty = parseInt(qtyMatch[1], 10);
+
+    let color = 'Nogal';
+    const colorMatch = block.match(/COLOR[\s\r\n]*:[\s\r\n]*([^\n\r]+)/i);
+    if (colorMatch) {
+      color = cleanColor(colorMatch[1]);
+    }
+
+    let vidrio = '4/9/4 INC';
+    const glassMatch = block.match(/VIDRIOS[\s\r\n]*:[\s\r\n]*([^\n\r]+)/i);
+    if (glassMatch) {
+      vidrio = glassMatch[1].trim();
+      if (vidrio.includes(' -')) {
+        vidrio = vidrio.split(' -')[0].trim();
+      }
+    }
+
+    let price = 0;
+    const priceMatch = block.match(/PRECIO UNITARIO[\s\r\n]*\$([\d.]+)/i);
+    if (priceMatch) {
+      price = parseInt(priceMatch[1].replace(/\./g, ''), 10);
+    }
+
+    let tipo = 'Fijo';
+    const lineMatch = block.match(/LÍNEA[\s\r\n]*:[\s\r\n]*([^\n\r]+)/i);
+    const lineName = lineMatch ? lineMatch[1].toLowerCase() : '';
+    if (lineName.includes('corredera') || lineName.includes('corrediza') || block.toLowerCase().includes('corredera')) tipo = 'Corredera';
+
+    items.push({
+      pos: itemBlock.pos,
+      ancho,
+      alto,
+      color,
+      vidrio,
+      qty,
+      price,
+      tipo,
+      desc: `Ventana ${tipo} ${ancho}x${alto}mm`
+    });
+  }
+
+  return items;
+}
+
+function parseSodivalCotizacion(text) {
+  const items = [];
+  const matches = [...text.matchAll(/Item\s*:\s*(V\d+|PV\d+|P\d+)/ig)];
+  const blocks = [];
+
+  for (let i = 0; i < matches.length; i++) {
+    const start = matches[i].index;
+    const end = (i + 1 < matches.length) ? matches[i+1].index : text.length;
+    blocks.push({
+      pos: matches[i][1],
+      block: text.slice(start, end)
+    });
+  }
+
+  for (const itemBlock of blocks) {
+    const block = itemBlock.block;
+    const medMatch = block.match(/Ancho\s*:\s*([\d.,]+)\s*mm/i);
+    const altoMatch = block.match(/Alto\s*:\s*([\d.,]+)\s*mm/i);
+    if (!medMatch || !altoMatch) continue;
+
+    const ancho = Math.round(parseFloat(medMatch[1].replace(/\./g, '').replace(',', '.')));
+    const alto  = Math.round(parseFloat(altoMatch[1].replace(/\./g, '').replace(',', '.')));
+
+    let qty = 1;
+    const qtyMatch = block.match(/Unidades\s*:\s*(\d+)/i);
+    if (qtyMatch) qty = parseInt(qtyMatch[1], 10);
+
+    let color = 'Nogal';
+    const lines = block.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+    for (const line of lines) {
+      if (line.toLowerCase().includes('nogal') || line.toLowerCase().includes('roble') || line.toLowerCase().includes('blanco')) {
+        color = cleanColor(line);
+        break;
+      }
+    }
+
+    let vidrio = '4/9/4 INC';
+    for (const line of lines) {
+      if (line.toLowerCase().includes('dvh') || line.toLowerCase().includes('vidrio') || line.match(/\d\+\d\+\d/)) {
+        vidrio = line;
+        break;
+      }
+    }
+
+    let price = 0;
+    const priceMatch = block.match(/\$\s*Unitario\s*:\s*\$\s*([\d.]+)/i);
+    if (priceMatch) {
+      price = parseInt(priceMatch[1].replace(/\./g, ''), 10);
+    }
+
+    let tipo = 'Fijo';
+    if (block.toLowerCase().includes('corredera') || block.toLowerCase().includes('corrediza')) tipo = 'Corredera';
+    else if (block.toLowerCase().includes('proyectante') || block.toLowerCase().includes('abatible') || block.toLowerCase().includes('batiente')) tipo = 'Practicable';
+
+    items.push({
+      pos: itemBlock.pos,
+      ancho,
+      alto,
+      color,
+      vidrio,
+      qty,
+      price,
+      tipo,
+      desc: `Ventana ${tipo} ${ancho}x${alto}mm`
+    });
+  }
+
+  return items;
+}
+
+function parsePdfText(text) {
+  const format = detectFormat(text);
+  console.log(`Detected PDF format type: ${format}`);
+  if (format === 'format3') {
+    return parseFormat3(text);
+  } else if (format === 'sodival_cotizacion') {
+    return parseSodivalCotizacion(text);
+  } else if (format === 'format2_roberto_multi') {
+    return parseFormat2RobertoMulti(text);
+  } else if (format === 'format2_gustavo') {
+    return parseFormat2Gustavo(text);
+  } else if (format === 'format2_roberto') {
+    return parseFormat2Roberto(text);
+  } else {
+    return parseFormat1(text);
+  }
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
