@@ -631,3 +631,53 @@ async function pingOdoo() {
   }
 })();
 
+// ── Theme Toggle Logic ────────────────────────────────────────────────────────
+function initThemeToggle() {
+  const isDark = document.documentElement.classList.contains('dark');
+  updateThemeIcons(isDark);
+  
+  document.querySelectorAll('.themeToggleBtn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const currentlyDark = document.documentElement.classList.contains('dark');
+      if (currentlyDark) {
+        document.documentElement.classList.remove('dark');
+        localStorage.setItem('theme', 'light');
+        updateThemeIcons(false);
+      } else {
+        document.documentElement.classList.add('dark');
+        localStorage.setItem('theme', 'dark');
+        updateThemeIcons(true);
+      }
+    });
+  });
+}
+
+function updateThemeIcons(isDark) {
+  const sunIcons = document.querySelectorAll('.themeSunIcon');
+  const moonIcons = document.querySelectorAll('.themeMoonIcon');
+  const toggleBtns = document.querySelectorAll('.themeToggleBtn');
+  
+  sunIcons.forEach(icon => {
+    if (isDark) icon.classList.remove('hidden');
+    else icon.classList.add('hidden');
+  });
+  
+  moonIcons.forEach(icon => {
+    if (isDark) icon.classList.add('hidden');
+    else icon.classList.remove('hidden');
+  });
+
+  toggleBtns.forEach(btn => {
+    if (isDark) {
+      btn.classList.add('bg-slate-800/60', 'border-white/5', 'text-slate-300');
+      btn.classList.remove('bg-slate-100', 'border-slate-300', 'text-slate-600');
+    } else {
+      btn.classList.remove('bg-slate-800/60', 'border-white/5', 'text-slate-300');
+      btn.classList.add('bg-slate-100', 'border-slate-300', 'text-slate-600');
+    }
+  });
+}
+
+// Initialize theme toggle
+initThemeToggle();
+

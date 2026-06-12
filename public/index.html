@@ -1,10 +1,17 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="es" class="dark">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Cotizador PVC | Prowindows</title>
   <meta name="description" content="Cotizador de ventanas PVC – carga tu PDF y guarda en Odoo." />
+  <script>
+    if (localStorage.getItem('theme') === 'light') {
+      document.documentElement.classList.remove('dark');
+    } else {
+      document.documentElement.classList.add('dark');
+    }
+  </script>
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
@@ -110,6 +117,119 @@
       80%{transform:translateX(4px)}
     }
     .shake { animation: shake 0.4s ease; }
+
+    /* ── LIGHT MODE OVERRIDES ────────────────────────────────────────────────── */
+    html:not(.dark) body {
+      background: #f8fafc;
+      color: #334155;
+    }
+    html:not(.dark) .bg-mesh {
+      background:
+        radial-gradient(ellipse 80% 60% at 20% -10%, rgba(34,197,94,0.08) 0%, transparent 60%),
+        radial-gradient(ellipse 60% 50% at 85% 80%, rgba(203,213,225,0.4) 0%, transparent 60%),
+        #f8fafc;
+    }
+    html:not(.dark) .glass {
+      background: rgba(255, 255, 255, 0.75);
+      border: 1px solid rgba(15, 23, 42, 0.08);
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
+    }
+    html:not(.dark) .glass-light {
+      background: rgba(241, 245, 249, 0.85);
+      border: 1px solid rgba(15, 23, 42, 0.06);
+    }
+    html:not(.dark) .modal-overlay {
+      background: rgba(15, 23, 42, 0.3);
+    }
+    html:not(.dark) ::-webkit-scrollbar-track {
+      background: rgba(0, 0, 0, 0.03);
+    }
+    html:not(.dark) ::-webkit-scrollbar-thumb {
+      background: rgba(34,197,94,0.2);
+    }
+    
+    html:not(.dark) .text-white,
+    html:not(.dark) #statTotal {
+      color: #0f172a !important;
+    }
+    html:not(.dark) .text-slate-100 { color: #1e293b !important; }
+    html:not(.dark) .text-slate-200,
+    html:not(.dark) #selectedClientName { color: #334155 !important; }
+    html:not(.dark) .text-slate-300 { color: #475569 !important; }
+    html:not(.dark) .text-slate-400 { color: #64748b !important; }
+    html:not(.dark) .text-slate-500 { color: #475569 !important; }
+    html:not(.dark) .text-slate-600 { color: #94a3b8 !important; }
+    
+    html:not(.dark) .text-green-400 { color: #16a34a !important; }
+    html:not(.dark) .text-green-300 { color: #15803d !important; }
+    html:not(.dark) .text-red-400 { color: #dc2626 !important; }
+    
+    html:not(.dark) .bg-slate-800\/50,
+    html:not(.dark) .bg-slate-800\/60,
+    html:not(.dark) #selectedClientChip {
+      background-color: rgba(241, 245, 249, 0.9) !important;
+    }
+    html:not(.dark) .bg-slate-900\/30 {
+      background-color: rgba(241, 245, 249, 0.45) !important;
+    }
+    html:not(.dark) .bg-green-500\/10 {
+      background-color: rgba(34, 197, 94, 0.08) !important;
+    }
+    html:not(.dark) .bg-green-500\/15 {
+      background-color: rgba(34, 197, 94, 0.12) !important;
+    }
+    html:not(.dark) .bg-red-500\/10 {
+      background-color: rgba(239, 68, 68, 0.08) !important;
+    }
+    
+    html:not(.dark) .border-slate-600\/50 {
+      border-color: rgba(203, 213, 225, 0.8) !important;
+    }
+    html:not(.dark) .border-white\/5,
+    html:not(.dark) .border-white\/8,
+    html:not(.dark) .border-white\/10 {
+      border-color: rgba(15, 23, 42, 0.08) !important;
+    }
+    html:not(.dark) .border-green-500\/25,
+    html:not(.dark) .border-green-500\/30 {
+      border-color: rgba(34, 197, 94, 0.25) !important;
+    }
+    html:not(.dark) .border-red-500\/25 {
+      border-color: rgba(239, 68, 68, 0.2) !important;
+    }
+    
+    html:not(.dark) .divide-white\/4 > :not([hidden]) ~ :not([hidden]),
+    html:not(.dark) .divide-white\/5 > :not([hidden]) ~ :not([hidden]) {
+      border-color: rgba(203, 213, 225, 0.4) !important;
+    }
+    html:not(.dark) .border-b.border-white\/5 {
+      border-color: rgba(203, 213, 225, 0.5) !important;
+    }
+    html:not(.dark) .item-row:hover {
+      background: rgba(34, 197, 94, 0.05) !important;
+    }
+    
+    html:not(.dark) input,
+    html:not(.dark) select,
+    html:not(.dark) textarea {
+      background-color: #ffffff !important;
+      color: #0f172a !important;
+      border-color: rgba(203, 213, 225, 0.8) !important;
+    }
+    html:not(.dark) input::placeholder {
+      color: #94a3b8 !important;
+    }
+    html:not(.dark) #clientSuggestions {
+      background: rgba(255, 255, 255, 0.95) !important;
+      border-color: rgba(15, 23, 42, 0.1) !important;
+    }
+    html:not(.dark) #clientSuggestions li:hover {
+      background-color: rgba(34, 197, 94, 0.08) !important;
+    }
+    html:not(.dark) #userMenu {
+      background: rgba(255, 255, 255, 0.98) !important;
+      border-color: rgba(15, 23, 42, 0.1) !important;
+    }
   </style>
 </head>
 <body class="bg-mesh text-slate-100 antialiased">
@@ -117,7 +237,18 @@
 <!-- ══════════════════════════════════════════════════════
      LOGIN SCREEN
 ══════════════════════════════════════════════════════ -->
-<div id="loginScreen" class="min-h-screen flex items-center justify-center px-4 py-12">
+<div id="loginScreen" class="min-h-screen flex items-center justify-center px-4 py-12 relative">
+  <!-- Theme Toggle for Login Screen -->
+  <div class="absolute top-4 right-4 z-50">
+    <button type="button" class="themeToggleBtn w-10 h-10 rounded-xl bg-slate-800/60 border border-white/5 hover:bg-slate-700/60 text-slate-300 flex items-center justify-center transition shadow-lg" title="Cambiar tema">
+      <svg class="themeSunIcon w-5 h-5 hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707m0-12.728l.707.707m12.728 12.728l.707.707M12 8a4 4 0 100 8 4 4 0 000-8z"/>
+      </svg>
+      <svg class="themeMoonIcon w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M21.752 15.002A9.718 9.718 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z"/>
+      </svg>
+    </button>
+  </div>
   <div class="w-full max-w-md fade-up">
     <!-- Logo -->
     <div class="text-center mb-8">
@@ -224,6 +355,15 @@
       </div>
       <!-- Right nav -->
       <div class="flex items-center gap-3">
+        <!-- Theme Toggle Button -->
+        <button type="button" class="themeToggleBtn w-9 h-9 rounded-xl bg-slate-800/60 border border-white/5 hover:bg-slate-700/60 text-slate-300 flex items-center justify-center transition" title="Cambiar tema">
+          <svg class="themeSunIcon w-4 h-4 hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707m0-12.728l.707.707m12.728 12.728l.707.707M12 8a4 4 0 100 8 4 4 0 000-8z"/>
+          </svg>
+          <svg class="themeMoonIcon w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M21.752 15.002A9.718 9.718 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z"/>
+          </svg>
+        </button>
         <div id="odooStatus" class="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-800/60 border border-white/5 text-xs text-slate-400">
           <span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
           <span>Odoo</span>
