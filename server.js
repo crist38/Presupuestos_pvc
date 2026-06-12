@@ -784,10 +784,14 @@ app.post('/api/save-to-odoo', requireAuth, async (req, res) => {
     console.log(`Confirmed order ${orderRec.name}`);
 
     // 7. Find work center
-    let workcenterName = 'Taller Armado PVC';
+    let workcenterId = 4; // Default to ID 4 (Taller Corte Armado PVC)
+    let workcenterName = 'Taller Corte Armado PVC';
     try {
-      const wcs = await odoo(req, 'mrp.workcenter', 'search_read', [[['name', 'ilike', 'PVC']]], { fields: ['id', 'name'], limit: 1 });
-      if (wcs.length) workcenterName = wcs[0].name;
+      const wcs = await odoo(req, 'mrp.workcenter', 'search_read', [[['name', 'ilike', 'Corte Armado PVC']]], { fields: ['id', 'name'], limit: 1 });
+      if (wcs.length) {
+        workcenterId = wcs[0].id;
+        workcenterName = wcs[0].name;
+      }
     } catch { /* mrp may not be installed */ }
 
     // 8. Create MOs
@@ -806,12 +810,33 @@ app.post('/api/save-to-odoo', requireAuth, async (req, res) => {
         };
         if (srcLocs.length) moData.location_src_id = srcLocs[0].id;
         if (prodLocs.length) moData.location_dest_id = prodLocs[0].id;
+        
+        // Create the MO
         const moId = await odoo(req, 'mrp.production', 'create', [moData]);
         moIds.push(moId);
         console.log(`Created MO ${moId} for ${item.pos}`);
+
+        // Create a custom Work Order for Taller Corte Armado PVC
+        const woName = `[${item.pos}] ${clientName} | Corte Armado PVC | ${item.ancho} x ${item.alto} mm | ${item.color} | ${item.tipo}`;
+        const woData = {
+          name: woName,
+          production_id: moId,
+          workcenter_id: workcenterId,
+          x_studio_cliente: clientName,
+        };
+        const woId = await odoo(req, 'mrp.workorder', 'create', [woData]);
+        console.log(`Created Work Order ${woId} for MO ${moId}`);
+
+        // Confirm MO (transitions state to confirmed)
+        await odoo(req, 'mrp.production', 'action_confirm', [[moId]]);
+        console.log(`Confirmed MO ${moId}`);
+
+        // Plan MO (allocates calendar schedule and dates for the work order)
+        await odoo(req, 'mrp.production', 'button_plan', [[moId]]);
+        console.log(`Planned MO ${moId}`);
       }
     } catch (e) {
-      console.warn('MO creation skipped:', e.message);
+      console.warn('MO creation/planning skipped:', e.message);
     }
 
     res.json({
