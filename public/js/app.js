@@ -584,7 +584,13 @@ function showApp(user) {
   document.getElementById('userInitial').textContent = user.name.charAt(0).toUpperCase();
 
   if (user.avatar) {
-    document.getElementById('userAvatar').innerHTML = `<img src="data:image/png;base64,${user.avatar}" class="w-full h-full object-cover" />`;
+    let mimeType = 'image/png';
+    if (user.avatar.startsWith('PD94') || user.avatar.startsWith('PHN2')) {
+      mimeType = 'image/svg+xml';
+    } else if (user.avatar.startsWith('/9j/')) {
+      mimeType = 'image/jpeg';
+    }
+    document.getElementById('userAvatar').innerHTML = `<img src="data:${mimeType};base64,${user.avatar}" class="w-full h-full object-cover" />`;
   } else {
     document.getElementById('userAvatar').innerHTML = `<span id="userInitial">${user.name.charAt(0).toUpperCase()}</span>`;
   }
