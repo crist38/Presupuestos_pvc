@@ -769,12 +769,41 @@ app.post('/api/save-to-odoo', requireAuth, async (req, res) => {
     const note = noteLines.join('\n');
 
     // 5. Create sale.order
-    const orderId = await odoo(req, 'sale.order', 'create', [{
+    // Find or create "Taller PVC" tag
+    let tagIds = [];
+    try {
+      console.log("Resolving tag 'Taller PVC' in crm.tag...");
+      const existingTags = await odoo(req, 'crm.tag', 'search_read', [
+        [['name', '=', 'Taller PVC']]
+      ], { fields: ['id'], limit: 1 });
+
+      let tagId;
+      if (existingTags && existingTags.length > 0) {
+        tagId = existingTags[0].id;
+        console.log(`Found existing tag 'Taller PVC' with ID ${tagId}`);
+      } else {
+        tagId = await odoo(req, 'crm.tag', 'create', [{ name: 'Taller PVC' }]);
+        console.log(`Created new tag 'Taller PVC' with ID ${tagId}`);
+      }
+      if (tagId) {
+        tagIds.push(tagId);
+      }
+    } catch (tagErr) {
+      console.error('Failed to resolve or create "Taller PVC" tag:', tagErr.message || tagErr);
+    }
+
+    const saleOrderData = {
       partner_id: partnerId,
       note,
       order_line: orderLines,
       client_order_ref: obra || false,
-    }]);
+    };
+
+    if (tagIds.length > 0) {
+      saleOrderData.tag_ids = [[6, 0, tagIds]];
+    }
+
+    const orderId = await odoo(req, 'sale.order', 'create', [saleOrderData]);
     console.log(`Created sale.order ID ${orderId}`);
 
     const [orderRec] = await odoo(req, 'sale.order', 'read', [[orderId]], { fields: ['name', 'amount_total'] });
