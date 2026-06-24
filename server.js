@@ -211,21 +211,35 @@ function parseFormat2Gustavo(text) {
     }
 
     let qty = 1;
-    const qtyMatch = block.match(/UDS:\s*(\d+)/i);
-    if (qtyMatch) qty = parseInt(qtyMatch[1], 10);
-
     let price = 0;
-    const priceLines = block.split('\n');
-    for (let idx = 0; idx < priceLines.length; idx++) {
-      if (priceLines[idx].includes('UDS:')) {
-        for (let k = idx + 1; k < priceLines.length; k++) {
-          const candidate = priceLines[k].replace(/\./g, '').trim();
-          if (/^\d+$/.test(candidate)) {
-            price = parseInt(candidate, 10);
-            break;
+
+    const lines = block.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+    const udsLine = lines.find(l => l.toUpperCase().includes('UDS:'));
+
+    if (udsLine) {
+      const udsValueMatch = udsLine.match(/UDS:\s*([^\s]+)/i);
+      if (udsValueMatch) {
+        const val = udsValueMatch[1].trim();
+        // Check for concatenated format: e.g. "1162.413162.413" -> qty: 1, price: 162.413
+        const concatMatch = val.match(/^(\d+?)(\d{1,3}(?:\.\d{3})+)(\d{1,3}(?:\.\d{3})+)$/);
+        if (concatMatch) {
+          qty = parseInt(concatMatch[1], 10);
+          price = parseInt(concatMatch[2].replace(/\./g, ''), 10);
+        } else {
+          // Fallback to separate lines format
+          const justQty = parseInt(val, 10);
+          if (!isNaN(justQty)) {
+            qty = justQty;
+          }
+          const udsIdx = lines.indexOf(udsLine);
+          for (let k = udsIdx + 1; k < lines.length; k++) {
+            const candidate = lines[k].replace(/\./g, '').trim();
+            if (/^\d+$/.test(candidate)) {
+              price = parseInt(candidate, 10);
+              break;
+            }
           }
         }
-        break;
       }
     }
 

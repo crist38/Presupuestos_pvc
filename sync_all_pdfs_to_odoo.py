@@ -72,20 +72,30 @@ def parse_gustavo_format(text):
                 glass = glass.split(' -')[0].strip()
         
         qty = 1
-        qty_match = re.search(r'UDS:\s*(\d+)', block)
-        if qty_match:
-            qty = int(qty_match.group(1))
-            
         price = 0
-        price_lines = block.split('\n')
-        for idx, line in enumerate(price_lines):
-            if 'UDS:' in line:
-                for k in range(idx+1, len(price_lines)):
-                    candidate = price_lines[k].replace('.', '').strip()
-                    if candidate.isdigit():
-                        price = int(candidate)
-                        break
-                break
+        
+        lines_list = [l.strip() for l in block.split('\n') if l.strip()]
+        uds_line = next((l for l in lines_list if 'UDS:' in l.upper()), None)
+        
+        if uds_line:
+            uds_val_match = re.search(r'UDS:\s*([^\s]+)', uds_line, re.IGNORECASE)
+            if uds_val_match:
+                val = uds_val_match.group(1).strip()
+                concat_match = re.match(r'^(\d+?)(\d{1,3}(?:\.\d{3})+)(\d{1,3}(?:\.\d{3})+)$', val)
+                if concat_match:
+                    qty = int(concat_match.group(1))
+                    price = int(concat_match.group(2).replace('.', ''))
+                else:
+                    try:
+                        qty = int(val)
+                    except ValueError:
+                        qty = 1
+                    uds_idx = lines_list.index(uds_line)
+                    for k in range(uds_idx + 1, len(lines_list)):
+                        candidate = lines_list[k].replace('.', '').strip()
+                        if candidate.isdigit():
+                            price = int(candidate)
+                            break
         
         items.append({
             'pos': pos,
