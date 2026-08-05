@@ -827,10 +827,10 @@ app.post('/api/save-to-odoo', requireAuth, async (req, res) => {
     console.log(`Confirmed order ${orderRec.name}`);
 
     // 7. Find work center
-    let workcenterId = 4; // Default to ID 4 (Taller Corte Armado PVC)
-    let workcenterName = 'Taller Corte Armado PVC';
+    let workcenterId = 4; // Default to ID 4 (Taller Corte Perfiles PVC)
+    let workcenterName = 'Taller Corte Perfiles PVC';
     try {
-      const wcs = await odoo(req, 'mrp.workcenter', 'search_read', [[['name', 'ilike', 'Corte Armado PVC']]], { fields: ['id', 'name'], limit: 1 });
+      const wcs = await odoo(req, 'mrp.workcenter', 'search_read', [[['name', 'ilike', 'Corte Perfiles PVC']]], { fields: ['id', 'name'], limit: 1 });
       if (wcs.length) {
         workcenterId = wcs[0].id;
         workcenterName = wcs[0].name;
@@ -859,8 +859,8 @@ app.post('/api/save-to-odoo', requireAuth, async (req, res) => {
         moIds.push(moId);
         console.log(`Created MO ${moId} for ${item.pos}`);
 
-        // Create a custom Work Order for Taller Corte Armado PVC
-        const woName = `[${item.pos}] ${clientName} | Corte Armado PVC | ${item.ancho} x ${item.alto} mm | ${item.color} | ${item.tipo}`;
+        // Create a custom Work Order for Taller Corte Perfiles PVC
+        const woName = `[${item.pos}] ${clientName} | Corte Perfiles PVC | ${item.ancho} x ${item.alto} mm | ${item.color} | ${item.tipo}`;
         const woData = {
           name: woName,
           production_id: moId,
