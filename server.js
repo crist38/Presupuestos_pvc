@@ -679,7 +679,7 @@ app.post('/api/create-client', requireAuth, async (req, res) => {
 // ── POST /api/save-to-odoo ────────────────────────────────────────────────────
 app.post('/api/save-to-odoo', requireAuth, async (req, res) => {
   try {
-    const { clientName, partnerId: existingPartnerId, obra, items } = req.body;
+    const { clientName, partnerId: existingPartnerId, obra, items, pdfBase64, pdfFileName } = req.body;
 
     if (!clientName || !items || !items.length) {
       return res.status(400).json({ error: 'Nombre de cliente e ítems son obligatorios.' });
@@ -821,6 +821,24 @@ app.post('/api/save-to-odoo', requireAuth, async (req, res) => {
     console.log(`Created sale.order ID ${orderId}`);
 
     const [orderRec] = await odoo(req, 'sale.order', 'read', [[orderId]], { fields: ['name', 'amount_total'] });
+
+    // 5b. Attach original PDF to sale.order in Odoo
+    if (pdfBase64) {
+      try {
+        const cleanBase64 = pdfBase64.replace(/^data:[^;]+;base64,/, '');
+        const attachmentName = pdfFileName || `Cotizacion_${orderRec.name}.pdf`;
+        const attachmentId = await odoo(req, 'ir.attachment', 'create', [{
+          name: attachmentName,
+          datas: cleanBase64,
+          res_model: 'sale.order',
+          res_id: orderId,
+          mimetype: 'application/pdf',
+        }]);
+        console.log(`📎 PDF '${attachmentName}' attached to sale.order ID ${orderId} (ir.attachment ID ${attachmentId})`);
+      } catch (attErr) {
+        console.error('Failed to attach PDF to sale.order:', attErr.message || attErr);
+      }
+    }
 
     // 6. Confirm
     await odoo(req, 'sale.order', 'action_confirm', [[orderId]]);

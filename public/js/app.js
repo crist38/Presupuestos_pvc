@@ -3,6 +3,8 @@ let parsedItems = [];
 let pdfPageCount = 0;
 let selectedPartnerId = null;
 let isSaving = false;
+let currentPdfBase64 = null;
+let currentPdfFileName = null;
 
 // ── DOM refs ─────────────────────────────────────────────────────────────────
 const dropZone       = document.getElementById('dropZone');
@@ -68,6 +70,14 @@ dropZone.addEventListener('keydown', e => {
 
 // ── Handle file upload ────────────────────────────────────────────────────────
 async function handleFile(file) {
+  // Read PDF as base64 and store file info
+  currentPdfFileName = file.name;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    currentPdfBase64 = e.target.result;
+  };
+  reader.readAsDataURL(file);
+
   // Show filename chip
   fileNameText.textContent = file.name;
   fileChip.classList.remove('hidden');
@@ -317,6 +327,8 @@ async function saveToOdoo() {
         partnerId: selectedPartnerId || null,
         obra: obra || null,
         items: parsedItems,
+        pdfBase64: currentPdfBase64,
+        pdfFileName: currentPdfFileName,
       }),
     });
 
