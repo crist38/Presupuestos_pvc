@@ -332,7 +332,17 @@ async function saveToOdoo() {
       }),
     });
 
+    // Guard against non-JSON responses (e.g. HTML error pages when session expired)
+    const contentType = res.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+      if (res.status === 401) {
+        throw new Error('Sesión expirada. Por favor vuelve a iniciar sesión.');
+      }
+      throw new Error(`Error del servidor (${res.status}). Verifica que el servidor esté corriendo.`);
+    }
+
     const data = await res.json();
+    if (res.status === 401) throw new Error('Sesión expirada. Por favor vuelve a iniciar sesión.');
     if (!res.ok) throw new Error(data.error || 'Error al guardar en Odoo');
 
     progressBar.style.width = '100%';
