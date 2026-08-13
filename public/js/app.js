@@ -68,15 +68,56 @@ dropZone.addEventListener('keydown', e => {
   if (e.key === 'Enter' || e.key === ' ') fileInput.click();
 });
 
+// ── Comprimir PDF en el navegador (evita error 413 en Vercel) ────────────────
+async function compressPdfFile(file) {
+  const LIMIT_BYTES = 3 * 1024 * 1024; // Comprimir si pesa más de 3MB
+  if (file.size <= LIMIT_BYTES) {
+    // Tamaño OK, leer directo como base64
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (e) => resolve(e.target.result);
+      reader.readAsDataURL(file);
+    });
+  }
+
+  try {
+    // Leer el PDF como ArrayBuffer
+    const arrayBuffer = await file.arrayBuffer();
+    const pdfBytes = new Uint8Array(arrayBuffer);
+
+    // Reescribir con pdf-lib (elimina duplicados, optimiza estructura)
+    const { PDFDocument } = window.PDFLib;
+    const pdfDoc = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
+    const compressedBytes = await pdfDoc.save({ useObjectStreams: true });
+
+    const originalKB  = (file.size / 1024).toFixed(0);
+    const newKB       = (compressedBytes.length / 1024).toFixed(0);
+    const reduction   = Math.round((1 - compressedBytes.length / file.size) * 100);
+    console.log(`📄 PDF comprimido: ${originalKB} KB → ${newKB} KB (${reduction}% reducción)`);
+
+    // Convertir Uint8Array → base64 data URL
+    const blob   = new Blob([compressedBytes], { type: 'application/pdf' });
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (e) => resolve(e.target.result);
+      reader.readAsDataURL(blob);
+    });
+  } catch (err) {
+    console.warn('⚠️ No se pudo comprimir el PDF, se usará el original:', err.message);
+    // Fallback: usar el archivo original
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (e) => resolve(e.target.result);
+      reader.readAsDataURL(file);
+    });
+  }
+}
+
 // ── Handle file upload ────────────────────────────────────────────────────────
 async function handleFile(file) {
-  // Read PDF as base64 and store file info
+  // Guardar nombre y leer/comprimir el PDF como base64
   currentPdfFileName = file.name;
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    currentPdfBase64 = e.target.result;
-  };
-  reader.readAsDataURL(file);
+  currentPdfBase64 = null; // se llenará abajo de forma asíncrona
 
   // Show filename chip
   fileNameText.textContent = file.name;
@@ -86,6 +127,7 @@ async function handleFile(file) {
   progressWrap.classList.remove('hidden');
   progressBar.style.width = '0%';
   progressBar.style.animation = 'none';
+  progressBar.style.background = '';
   progressLabel.textContent = 'Procesando PDF...';
   progressPct.textContent = '…';
 
@@ -93,39 +135,51 @@ async function handleFile(file) {
   void progressBar.offsetWidth; // reflow
   progressBar.style.animation = 'progress 4s ease forwards';
 
-  // Build form data
-  const formData = new FormData();
-  formData.append('pdf', file);
+  // Comprimir PDF y parsear en paralelo
+  const [base64Result, parseResult] = await Promise.allSettled([
+    compressPdfFile(file),
+    (async () => {
+      const formData = new FormData();
+      formData.append('pdf', file);
+      const res = await fetch('/api/parse-pdf', { method: 'POST', body: formData });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Error desconocido');
+      return data;
+    })()
+  ]);
 
-  try {
-    const res = await fetch('/api/parse-pdf', { method: 'POST', body: formData });
-    const data = await res.json();
+  // Guardar base64 comprimido (o original si falló)
+  if (base64Result.status === 'fulfilled') {
+    currentPdfBase64 = base64Result.value;
+  }
 
-    if (!res.ok) throw new Error(data.error || 'Error desconocido');
-
-    parsedItems = data.items;
-    pdfPageCount = data.pageCount;
-
-    progressBar.style.width = '100%';
-    progressLabel.textContent = '¡Listo!';
-    progressPct.textContent = `${parsedItems.length} ítems`;
-
-    renderTable(parsedItems, data.total);
-    updateStats(parsedItems, data.total);
-    checkSaveReady();
-
-    showToast('success', 'PDF procesado', `Se encontraron ${parsedItems.length} ítems de ventana.`);
-
-    setTimeout(() => progressWrap.classList.add('hidden'), 2500);
-  } catch (err) {
+  // Manejar resultado del parse
+  if (parseResult.status === 'rejected') {
     progressBar.style.animation = 'none';
     progressBar.style.width = '100%';
     progressBar.style.background = '#ef4444';
     progressLabel.textContent = 'Error al procesar';
     progressPct.textContent = '';
-    showToast('error', 'Error al leer el PDF', err.message);
+    showToast('error', 'Error al leer el PDF', parseResult.reason.message);
     setTimeout(() => progressWrap.classList.add('hidden'), 3000);
+    return;
   }
+
+  const data = parseResult.value;
+  parsedItems = data.items;
+  pdfPageCount = data.pageCount;
+
+  progressBar.style.width = '100%';
+  progressLabel.textContent = '¡Listo!';
+  progressPct.textContent = `${parsedItems.length} ítems`;
+
+  renderTable(parsedItems, data.total);
+  updateStats(parsedItems, data.total);
+  checkSaveReady();
+
+  showToast('success', 'PDF procesado', `Se encontraron ${parsedItems.length} ítems de ventana.`);
+
+  setTimeout(() => progressWrap.classList.add('hidden'), 2500);
 }
 
 // ── Render table ──────────────────────────────────────────────────────────────

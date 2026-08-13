@@ -4,6 +4,7 @@ const pdfParse = require('pdf-parse');
 const xmlrpc = require('xmlrpc');
 const session = require('express-session');
 const path = require('path');
+const { PDFDocument } = require('pdf-lib');
 
 const app = express();
 const PORT = 3000;
@@ -22,8 +23,37 @@ app.use(session({
 }));
 
 // ── Middleware ────────────────────────────────────────────────────────────────
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
+
+// ── PDF Compressor ────────────────────────────────────────────────────────────
+// Reescribe el PDF con pdf-lib para reducir su tamaño antes de enviarlo a Odoo
+async function compressPdfBase64(base64String) {
+  try {
+    const cleanB64 = base64String.replace(/^data:[^;]+;base64,/, '');
+    const pdfBytes = Buffer.from(cleanB64, 'base64');
+    const originalSize = pdfBytes.length;
+
+    // Si ya es menor a 5MB, no comprimir
+    if (originalSize < 5 * 1024 * 1024) {
+      console.log(`📄 PDF tamaño original: ${(originalSize / 1024).toFixed(1)} KB — sin compresión necesaria.`);
+      return cleanB64;
+    }
+
+    // Reescribir el PDF con pdf-lib (elimina metadata, objetos duplicados, etc.)
+    const pdfDoc = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
+    const compressedBytes = await pdfDoc.save({ useObjectStreams: true, addDefaultPage: false });
+    const compressedB64 = Buffer.from(compressedBytes).toString('base64');
+    const newSize = compressedBytes.length;
+
+    console.log(`📄 PDF comprimido: ${(originalSize / 1024).toFixed(1)} KB → ${(newSize / 1024).toFixed(1)} KB (${Math.round((1 - newSize / originalSize) * 100)}% reducción)`);
+    return compressedB64;
+  } catch (err) {
+    console.warn('⚠️  No se pudo comprimir el PDF, se usará el original:', err.message);
+    return base64String.replace(/^data:[^;]+;base64,/, '');
+  }
+}
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -822,14 +852,15 @@ app.post('/api/save-to-odoo', requireAuth, async (req, res) => {
 
     const [orderRec] = await odoo(req, 'sale.order', 'read', [[orderId]], { fields: ['name', 'amount_total'] });
 
-    // 5b. Attach original PDF to sale.order in Odoo
+    // 5b. Attach original PDF to sale.order in Odoo (con compresión automática)
     if (pdfBase64) {
       try {
-        const cleanBase64 = pdfBase64.replace(/^data:[^;]+;base64,/, '');
         const attachmentName = pdfFileName || `Cotizacion_${orderRec.name}.pdf`;
+        // Comprimir PDF para evitar error 413 del servidor Odoo
+        const compressedBase64 = await compressPdfBase64(pdfBase64);
         const attachmentId = await odoo(req, 'ir.attachment', 'create', [{
           name: attachmentName,
-          datas: cleanBase64,
+          datas: compressedBase64,
           res_model: 'sale.order',
           res_id: orderId,
           mimetype: 'application/pdf',
