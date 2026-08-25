@@ -247,26 +247,32 @@ function parseFormat2Gustavo(text) {
     const udsLine = lines.find(l => l.toUpperCase().includes('UDS:'));
 
     if (udsLine) {
-      const udsValueMatch = udsLine.match(/UDS:\s*([^\s]+)/i);
-      if (udsValueMatch) {
-        const val = udsValueMatch[1].trim();
-        // Check for concatenated format: e.g. "1162.413162.413" -> qty: 1, price: 162.413
-        const concatMatch = val.match(/^(\d+?)(\d{1,3}(?:\.\d{3})+)(\d{1,3}(?:\.\d{3})+)$/);
-        if (concatMatch) {
-          qty = parseInt(concatMatch[1], 10);
-          price = parseInt(concatMatch[2].replace(/\./g, ''), 10);
-        } else {
-          // Fallback to separate lines format
-          const justQty = parseInt(val, 10);
-          if (!isNaN(justQty)) {
-            qty = justQty;
-          }
-          const udsIdx = lines.indexOf(udsLine);
-          for (let k = udsIdx + 1; k < lines.length; k++) {
-            const candidate = lines[k].replace(/\./g, '').trim();
-            if (/^\d+$/.test(candidate)) {
-              price = parseInt(candidate, 10);
-              break;
+      const udsFullMatch = udsLine.match(/UDS:\s*(\d+)\s+([\d.]+)/i);
+      if (udsFullMatch) {
+        qty = parseInt(udsFullMatch[1], 10);
+        price = parseInt(udsFullMatch[2].replace(/\./g, ''), 10);
+      } else {
+        const udsValueMatch = udsLine.match(/UDS:\s*([^\s]+)/i);
+        if (udsValueMatch) {
+          const val = udsValueMatch[1].trim();
+          // Check for concatenated format: e.g. "1162.413162.413" -> qty: 1, price: 162.413
+          const concatMatch = val.match(/^(\d+?)(\d{1,3}(?:\.\d{3})+)(\d{1,3}(?:\.\d{3})+)$/);
+          if (concatMatch) {
+            qty = parseInt(concatMatch[1], 10);
+            price = parseInt(concatMatch[2].replace(/\./g, ''), 10);
+          } else {
+            // Fallback to separate lines format
+            const justQty = parseInt(val, 10);
+            if (!isNaN(justQty)) {
+              qty = justQty;
+            }
+            const udsIdx = lines.indexOf(udsLine);
+            for (let k = udsIdx + 1; k < lines.length; k++) {
+              const candidate = lines[k].replace(/\./g, '').trim();
+              if (/^\d+$/.test(candidate)) {
+                price = parseInt(candidate, 10);
+                break;
+              }
             }
           }
         }

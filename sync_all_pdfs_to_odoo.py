@@ -78,24 +78,29 @@ def parse_gustavo_format(text):
         uds_line = next((l for l in lines_list if 'UDS:' in l.upper()), None)
         
         if uds_line:
-            uds_val_match = re.search(r'UDS:\s*([^\s]+)', uds_line, re.IGNORECASE)
-            if uds_val_match:
-                val = uds_val_match.group(1).strip()
-                concat_match = re.match(r'^(\d+?)(\d{1,3}(?:\.\d{3})+)(\d{1,3}(?:\.\d{3})+)$', val)
-                if concat_match:
-                    qty = int(concat_match.group(1))
-                    price = int(concat_match.group(2).replace('.', ''))
-                else:
-                    try:
-                        qty = int(val)
-                    except ValueError:
-                        qty = 1
-                    uds_idx = lines_list.index(uds_line)
-                    for k in range(uds_idx + 1, len(lines_list)):
-                        candidate = lines_list[k].replace('.', '').strip()
-                        if candidate.isdigit():
-                            price = int(candidate)
-                            break
+            uds_full_match = re.search(r'UDS:\s*(\d+)\s+([\d.]+)', uds_line, re.IGNORECASE)
+            if uds_full_match:
+                qty = int(uds_full_match.group(1))
+                price = int(uds_full_match.group(2).replace('.', ''))
+            else:
+                uds_val_match = re.search(r'UDS:\s*([^\s]+)', uds_line, re.IGNORECASE)
+                if uds_val_match:
+                    val = uds_val_match.group(1).strip()
+                    concat_match = re.match(r'^(\d+?)(\d{1,3}(?:\.\d{3})+)(\d{1,3}(?:\.\d{3})+)$', val)
+                    if concat_match:
+                        qty = int(concat_match.group(1))
+                        price = int(concat_match.group(2).replace('.', ''))
+                    else:
+                        try:
+                            qty = int(val)
+                        except ValueError:
+                            qty = 1
+                        uds_idx = lines_list.index(uds_line)
+                        for k in range(uds_idx + 1, len(lines_list)):
+                            candidate = lines_list[k].replace('.', '').strip()
+                            if candidate.isdigit():
+                                price = int(candidate)
+                                break
         
         items.append({
             'pos': pos,
