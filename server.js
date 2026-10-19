@@ -188,6 +188,29 @@ function parseFormat1(text) {
   return items;
 }
 
+// Splits "<qty><price><total>" glued together (prices with '.' thousands separators),
+// choosing the split where qty * price === total.
+function splitConcatQtyPrice(val) {
+  const money = /^\d{1,3}(?:\.\d{3})*$/;
+  const toInt = s => parseInt(s.replace(/\./g, ''), 10);
+  let fallback = null;
+  for (let i = 1; i < val.length; i++) {
+    const qtyStr = val.slice(0, i);
+    if (!/^\d+$/.test(qtyStr)) break;
+    const rest = val.slice(i);
+    for (let j = 1; j < rest.length; j++) {
+      const priceStr = rest.slice(0, j);
+      const totalStr = rest.slice(j);
+      if (!money.test(priceStr) || !money.test(totalStr)) continue;
+      const qty = parseInt(qtyStr, 10);
+      const price = toInt(priceStr);
+      if (qty > 0 && price > 0 && qty * price === toInt(totalStr)) return { qty, price };
+      if (!fallback && priceStr.includes('.') && totalStr.includes('.')) fallback = { qty, price };
+    }
+  }
+  return fallback;
+}
+
 function parseFormat2Gustavo(text) {
   const items = [];
   const matches = [...text.matchAll(/Pos\.\s*(\d+)(?:\s*-\s*([A-Za-z0-9_,-]+?)(?:Importe|Total|\s|$))?/ig)];
@@ -256,10 +279,11 @@ function parseFormat2Gustavo(text) {
         if (udsValueMatch) {
           const val = udsValueMatch[1].trim();
           // Check for concatenated format: e.g. "1162.413162.413" -> qty: 1, price: 162.413
-          const concatMatch = val.match(/^(\d+?)(\d{1,3}(?:\.\d{3})+)(\d{1,3}(?:\.\d{3})+)$/);
-          if (concatMatch) {
-            qty = parseInt(concatMatch[1], 10);
-            price = parseInt(concatMatch[2].replace(/\./g, ''), 10);
+          // or "50217.39710.869.850" -> qty: 50, price: 217.397, total: 10.869.850
+          const concat = splitConcatQtyPrice(val);
+          if (concat) {
+            qty = concat.qty;
+            price = concat.price;
           } else {
             // Fallback to separate lines format
             const justQty = parseInt(val, 10);
