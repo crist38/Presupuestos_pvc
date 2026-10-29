@@ -112,6 +112,9 @@ function cleanColor(c) {
 }
 
 function detectFormat(text) {
+  if (text.includes("TIPOUDSVALOR NETOTOTAL NETO") && text.includes("Medida:")) {
+    return "veratec";
+  }
   if (text.includes("COMPONENTE") && text.includes("DIMENSIONES")) {
     return "format3";
   }
@@ -591,10 +594,74 @@ function parseSodivalCotizacion(text) {
   return items;
 }
 
+// Veratec (ELEGANS 60 / SLIDING 7400): each item ends with the "TIPOUDSVALOR NETOTOTAL NETO" header.
+// Position and quantity come glued together ("V34" = V3, 4 uds; "V132" = V13, 2 uds),
+// followed by "<unit> CLP$<total> CLP$". The split is chosen so that qty * unit ≈ total.
+function parseVeratec(text) {
+  const items = [];
+  const toInt = s => parseInt(s.replace(/\./g, ''), 10);
+  const chunks = text.split('TIPOUDSVALOR NETOTOTAL NETO');
+
+  for (const block of chunks) {
+    const medMatch = block.match(/Medida:\s*([\d.]+)\s*[xX]\s*([\d.]+)\s*mm/);
+    const rowMatch = block.match(/^\s*((?:PV|V|P)\d+)\s*\n\s*([\d.]+)\s*CLP\$\s*([\d.]+)\s*CLP\$/m);
+    if (!medMatch || !rowMatch) continue;
+
+    const ancho = toInt(medMatch[1]);
+    const alto  = toInt(medMatch[2]);
+    const price = toInt(rowMatch[2]);
+    const total = toInt(rowMatch[3]);
+
+    const code = rowMatch[1];
+    const prefix = code.match(/^[A-Z]+/)[0];
+    const digits = code.slice(prefix.length);
+    let pos = code;
+    let qty = 1;
+    let bestErr = Infinity;
+    for (let i = 1; i < digits.length; i++) {
+      const qtyStr = digits.slice(i);
+      if (qtyStr.startsWith('0')) continue;
+      const q = parseInt(qtyStr, 10);
+      const err = Math.abs(q * price - total);
+      if (err < bestErr) {
+        bestErr = err;
+        pos = prefix + digits.slice(0, i);
+        qty = q;
+      }
+    }
+
+    let color = 'Nogal';
+    const colorMatch = block.match(/Color:\s*([^\n\r(]+)/i);
+    if (colorMatch) color = cleanColor(colorMatch[1]);
+
+    let vidrio = '4/9/4 INC';
+    const glassMatch = block.match(/Superficie:\s*(.+?)\s+\d+,\d+\s*×/i);
+    if (glassMatch) vidrio = glassMatch[1].trim();
+
+    // Description is the first line with letters before "Fabricante:" (lines in between are bullet glyphs)
+    const lines = block.split('\n').map(l => l.trim()).filter(l => /[A-Za-zÁÉÍÓÚáéíóúñÑ]/.test(l));
+    const fabIdx = lines.findIndex(l => l.startsWith('Fabricante:'));
+    let desc = fabIdx > 0 ? lines[fabIdx - 1] : '';
+
+    const descLower = (desc || block).toLowerCase();
+    let tipo = 'Fijo';
+    if (descLower.includes('corredera') || descLower.includes('corrediza')) tipo = 'Corredera';
+    else if (descLower.includes('proyectante') || descLower.includes('abatible') || descLower.includes('batiente') || descLower.includes('practicable')) tipo = 'Practicable';
+
+    if (!desc) desc = `Ventana ${tipo} ${ancho}x${alto}mm`;
+
+    items.push({ pos, ancho, alto, color, vidrio, qty, price, tipo, desc });
+  }
+
+  return items;
+}
+
 function parsePdfText(text) {
   const format = detectFormat(text);
   console.log(`Detected PDF format type: ${format}`);
-  if (format === 'format3') {
+  if (format === 'veratec') {
+    return parseVeratec(text);
+  } else if (format === 'format3') {
     return parseFormat3(text);
   } else if (format === 'sodival_cotizacion') {
     return parseSodivalCotizacion(text);

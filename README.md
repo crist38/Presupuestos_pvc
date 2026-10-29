@@ -15,6 +15,7 @@ Aplicación web y suite de herramientas construida en **Node.js** y **Tailwind C
      - **Format 2 (Roberto Multi-Ítem)**: Kömmerling con tablas segmentadas por páginas.
      - **Format 3**: Winhause y Sodival.
      - **Sodival Cotización**: Formato propio de Sodival con desglose lineal.
+     - **Veratec**: Presupuestos Veratec South America (series ELEGANS 60 / SLIDING 7400), con posición y cantidad unidas (`V34` = V3, 4 uds).
 
 2. **Compresión Automática de PDFs (Anti error 413)**
    - Compresión en el **navegador** (frontend) usando `pdf-lib` antes de enviar el PDF al servidor.
