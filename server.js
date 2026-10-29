@@ -604,7 +604,8 @@ function parseVeratec(text) {
 
   for (const block of chunks) {
     const medMatch = block.match(/Medida:\s*([\d.]+)\s*[xX]\s*([\d.]+)\s*mm/);
-    const rowMatch = block.match(/^\s*((?:PV|V|P)\d+)\s*\n\s*([\d.]+)\s*CLP\$\s*([\d.]+)\s*CLP\$/m);
+    // Some quotes have no position code, only the quantity ("1" instead of "V11")
+    const rowMatch = block.match(/^\s*((?:PV|V|P)?\d+)\s*\n\s*([\d.]+)\s*CLP\$\s*([\d.]+)\s*CLP\$/m);
     if (!medMatch || !rowMatch) continue;
 
     const ancho = toInt(medMatch[1]);
@@ -613,12 +614,16 @@ function parseVeratec(text) {
     const total = toInt(rowMatch[3]);
 
     const code = rowMatch[1];
-    const prefix = code.match(/^[A-Z]+/)[0];
+    const prefix = (code.match(/^[A-Z]+/) || [''])[0];
     const digits = code.slice(prefix.length);
     let pos = code;
     let qty = 1;
     let bestErr = Infinity;
-    for (let i = 1; i < digits.length; i++) {
+    if (!prefix) {
+      pos = `V${items.length + 1}`;
+      qty = parseInt(digits, 10) || 1;
+    }
+    for (let i = 1; prefix && i < digits.length; i++) {
       const qtyStr = digits.slice(i);
       if (qtyStr.startsWith('0')) continue;
       const q = parseInt(qtyStr, 10);
