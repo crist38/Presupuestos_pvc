@@ -115,6 +115,8 @@ El servidor se levanta en el puerto **3000**:
 
 El proyecto se despliega automáticamente en Vercel al hacer `git push` a la rama `main`.
 
+**Variable obligatoria:** `SESSION_SECRET`, con al menos 32 caracteres aleatorios. Cifra la cookie de sesión; sin ella nadie puede iniciar sesión. En local se define al iniciar: `SESSION_SECRET="..." npm start`. Si se cambia, todas las sesiones se cierran.
+
 > **Límite de Vercel**: los requests tienen un máximo de **4.5 MB**. Por eso el PDF se comprime en el navegador antes de enviarlo. PDFs de hasta ~15 MB generalmente quedan por debajo del límite tras la compresión.
 
 Si el PDF sigue siendo demasiado grande tras la compresión, se recomienda reducirlo manualmente con [ilovepdf.com](https://www.ilovepdf.com/compress_pdf) antes de cargarlo.

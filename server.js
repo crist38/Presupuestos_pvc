@@ -2,9 +2,9 @@ const express = require('express');
 const multer = require('multer');
 const pdfParse = require('pdf-parse');
 const xmlrpc = require('xmlrpc');
-const session = require('express-session');
 const path = require('path');
 const { PDFDocument } = require('pdf-lib');
+const { isSessionConfigured, setSession, readSession, clearSession } = require('./session');
 
 const app = express();
 const PORT = 3000;
@@ -15,12 +15,11 @@ const ODOO_DB = 'prowindows-ltda';
 const GENERIC_PRODUCT_ID = 19253; // Ventana 2 hojas correderas PVC (Genérico)
 
 // ── Session ───────────────────────────────────────────────────────────────────
-app.use(session({
-  secret: 'pw-cotizador-pvc-2025-secret',
-  resave: false,
-  saveUninitialized: false,
-  cookie: { maxAge: 8 * 60 * 60 * 1000 }, // 8 hours
-}));
+// Cifrada en una cookie: en Vercel una sesión en memoria se pierde entre instancias
+app.use((req, res, next) => {
+  req.session = readSession(req);
+  next();
+});
 
 // ── Middleware ────────────────────────────────────────────────────────────────
 app.use(express.json({ limit: '50mb' }));
@@ -691,6 +690,11 @@ app.post('/api/login', async (req, res) => {
     const { email, password } = req.body;
     if (!email || !password) return res.status(400).json({ error: 'Email y contraseña son obligatorios.' });
 
+    if (!isSessionConfigured()) {
+      console.error('Falta SESSION_SECRET o tiene menos de 32 caracteres');
+      return res.status(503).json({ error: 'El servidor no está configurado correctamente.' });
+    }
+
     const common = createClient('common');
     const uid = await call(common, 'authenticate', [ODOO_DB, email, password, {}]);
 
@@ -706,18 +710,15 @@ app.post('/api/login', async (req, res) => {
       { fields: ['name', 'email', 'image_128'] },
     ]);
 
-    req.session.odooUid = uid;
-    req.session.odooPassword = password;
-    req.session.odooEmail = email;
-    req.session.odooName = users[0]?.name || email;
-    req.session.odooAvatar = users[0]?.image_128 || null;
+    const name = users[0]?.name || email;
+    setSession(res, { odooUid: uid, odooPassword: password, odooEmail: email, odooName: name });
 
-    console.log(`✅ Login: ${req.session.odooName} (uid=${uid})`);
+    console.log(`✅ Login: ${name} (uid=${uid})`);
     res.json({
       uid,
-      name: req.session.odooName,
+      name,
       email,
-      avatar: req.session.odooAvatar,
+      avatar: users[0]?.image_128 || null,
     });
   } catch (err) {
     console.error('login error:', err);
@@ -727,17 +728,28 @@ app.post('/api/login', async (req, res) => {
 
 // ── POST /api/logout ──────────────────────────────────────────────────────────
 app.post('/api/logout', (req, res) => {
-  req.session.destroy(() => res.json({ ok: true }));
+  clearSession(res);
+  res.json({ ok: true });
 });
 
 // ── GET /api/me ───────────────────────────────────────────────────────────────
-app.get('/api/me', (req, res) => {
+app.get('/api/me', async (req, res) => {
   if (!req.session?.odooUid) return res.status(401).json({ error: 'not_authenticated' });
+
+  // La foto no cabe en la cookie, así que se consulta a Odoo
+  let avatar = null;
+  try {
+    const users = await odoo(req, 'res.users', 'read', [[req.session.odooUid]], { fields: ['image_128'] });
+    avatar = users[0]?.image_128 || null;
+  } catch (err) {
+    console.warn('No se pudo leer la foto del usuario:', err.message);
+  }
+
   res.json({
     uid: req.session.odooUid,
     name: req.session.odooName,
     email: req.session.odooEmail,
-    avatar: req.session.odooAvatar,
+    avatar,
   });
 });
 
