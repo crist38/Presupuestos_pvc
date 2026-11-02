@@ -113,6 +113,26 @@ async function compressPdfFile(file) {
   }
 }
 
+// ── Quitar imágenes del PDF para el parseo (el servidor solo necesita el texto) ──
+// Las cotizaciones con muchos dibujos superan el límite de 4.5 MB de Vercel y
+// la compresión casi no las reduce; sin imágenes quedan en ~600 KB.
+async function stripPdfImages(file) {
+  try {
+    const { PDFDocument, PDFName, PDFRawStream } = window.PDFLib;
+    const pdfDoc = await PDFDocument.load(await file.arrayBuffer(), { ignoreEncryption: true });
+    for (const [, obj] of pdfDoc.context.enumerateIndirectObjects()) {
+      if (obj instanceof PDFRawStream && obj.dict.get(PDFName.of('Subtype')) === PDFName.of('Image')) {
+        obj.contents = new Uint8Array(0);
+      }
+    }
+    const bytes = await pdfDoc.save({ useObjectStreams: true });
+    return new Blob([bytes], { type: 'application/pdf' });
+  } catch (err) {
+    console.warn('⚠️ No se pudieron quitar las imágenes del PDF, se enviará el original:', err.message);
+    return file;
+  }
+}
+
 // ── Handle file upload ────────────────────────────────────────────────────────
 async function handleFile(file) {
   // Guardar nombre y leer/comprimir el PDF como base64
@@ -140,8 +160,9 @@ async function handleFile(file) {
     compressPdfFile(file),
     (async () => {
       const formData = new FormData();
-      formData.append('pdf', file);
+      formData.append('pdf', await stripPdfImages(file), file.name);
       const res = await fetch('/api/parse-pdf', { method: 'POST', body: formData });
+      if (res.status === 413) throw new Error('El PDF es demasiado grande para el servidor.');
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Error desconocido');
       return data;

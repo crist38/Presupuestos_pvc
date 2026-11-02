@@ -605,7 +605,8 @@ function parseVeratec(text) {
   for (const block of chunks) {
     const medMatch = block.match(/Medida:\s*([\d.]+)\s*[xX]\s*([\d.]+)\s*mm/);
     // Some quotes have no position code, only the quantity ("1" instead of "V11")
-    const rowMatch = block.match(/^\s*((?:PV|V|P)?\d+)\s*\n\s*([\d.]+)\s*CLP\$\s*([\d.]+)\s*CLP\$/m);
+    // Case-insensitive: some quotes type the position in lowercase ("v51")
+    const rowMatch = block.match(/^\s*((?:PV|V|P)?\d+)\s*\n\s*([\d.]+)\s*CLP\$\s*([\d.]+)\s*CLP\$/mi);
     if (!medMatch || !rowMatch) continue;
 
     const ancho = toInt(medMatch[1]);
@@ -613,7 +614,7 @@ function parseVeratec(text) {
     const price = toInt(rowMatch[2]);
     const total = toInt(rowMatch[3]);
 
-    const code = rowMatch[1];
+    const code = rowMatch[1].toUpperCase();
     const prefix = (code.match(/^[A-Z]+/) || [''])[0];
     const digits = code.slice(prefix.length);
     let pos = code;
