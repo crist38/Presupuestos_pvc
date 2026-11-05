@@ -822,16 +822,27 @@ app.post('/api/create-client', requireAuth, async (req, res) => {
 });
 
 // ── POST /api/save-to-odoo ────────────────────────────────────────────────────
-app.post('/api/save-to-odoo', requireAuth, async (req, res) => {
+// El PDF viaja como multipart (binario), no como base64 en JSON: base64 agrega
+// ~37% de peso y hace que cotizaciones con dibujos superen más fácil el límite
+// de 4.5 MB de Vercel.
+app.post('/api/save-to-odoo', requireAuth, upload.single('pdf'), async (req, res) => {
   try {
-    const { clientName, partnerId: existingPartnerId, obra, items, pdfBase64, pdfFileName } = req.body;
+    const { clientName, partnerId: existingPartnerId, obra } = req.body;
+    let items;
+    try {
+      items = JSON.parse(req.body.items || '[]');
+    } catch {
+      return res.status(400).json({ error: 'Formato de ítems inválido.' });
+    }
+    const pdfBase64 = req.file ? req.file.buffer.toString('base64') : null;
+    const pdfFileName = req.file ? req.file.originalname : null;
 
     if (!clientName || !items || !items.length) {
       return res.status(400).json({ error: 'Nombre de cliente e ítems son obligatorios.' });
     }
 
     // 1. Resolve partner
-    let partnerId = existingPartnerId;
+    let partnerId = existingPartnerId ? parseInt(existingPartnerId, 10) : null;
     if (!partnerId) {
       const found = await odoo(req, 'res.partner', 'search_read',
         [[['name', '=', clientName]]],

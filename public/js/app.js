@@ -3,7 +3,7 @@ let parsedItems = [];
 let pdfPageCount = 0;
 let selectedPartnerId = null;
 let isSaving = false;
-let currentPdfBase64 = null;
+let currentPdfBlob = null;
 let currentPdfFileName = null;
 
 // ── DOM refs ─────────────────────────────────────────────────────────────────
@@ -69,16 +69,11 @@ dropZone.addEventListener('keydown', e => {
 });
 
 // ── Comprimir PDF en el navegador (evita error 413 en Vercel) ────────────────
+// Se devuelve un Blob binario, no base64: base64 pesa ~37% más y hace más fácil
+// superar el límite de 4.5 MB de Vercel al subirlo en save-to-odoo.
 async function compressPdfFile(file) {
   const LIMIT_BYTES = 3 * 1024 * 1024; // Comprimir si pesa más de 3MB
-  if (file.size <= LIMIT_BYTES) {
-    // Tamaño OK, leer directo como base64
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onload = (e) => resolve(e.target.result);
-      reader.readAsDataURL(file);
-    });
-  }
+  if (file.size <= LIMIT_BYTES) return file;
 
   try {
     // Leer el PDF como ArrayBuffer
@@ -95,21 +90,10 @@ async function compressPdfFile(file) {
     const reduction   = Math.round((1 - compressedBytes.length / file.size) * 100);
     console.log(`📄 PDF comprimido: ${originalKB} KB → ${newKB} KB (${reduction}% reducción)`);
 
-    // Convertir Uint8Array → base64 data URL
-    const blob   = new Blob([compressedBytes], { type: 'application/pdf' });
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onload = (e) => resolve(e.target.result);
-      reader.readAsDataURL(blob);
-    });
+    return new Blob([compressedBytes], { type: 'application/pdf' });
   } catch (err) {
     console.warn('⚠️ No se pudo comprimir el PDF, se usará el original:', err.message);
-    // Fallback: usar el archivo original
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onload = (e) => resolve(e.target.result);
-      reader.readAsDataURL(file);
-    });
+    return file;
   }
 }
 
@@ -135,9 +119,9 @@ async function stripPdfImages(file) {
 
 // ── Handle file upload ────────────────────────────────────────────────────────
 async function handleFile(file) {
-  // Guardar nombre y leer/comprimir el PDF como base64
+  // Guardar nombre y comprimir el PDF
   currentPdfFileName = file.name;
-  currentPdfBase64 = null; // se llenará abajo de forma asíncrona
+  currentPdfBlob = null; // se llenará abajo de forma asíncrona
 
   // Show filename chip
   fileNameText.textContent = file.name;
@@ -156,22 +140,29 @@ async function handleFile(file) {
   progressBar.style.animation = 'progress 4s ease forwards';
 
   // Comprimir PDF y parsear en paralelo
-  const [base64Result, parseResult] = await Promise.allSettled([
+  const [blobResult, parseResult] = await Promise.allSettled([
     compressPdfFile(file),
     (async () => {
       const formData = new FormData();
       formData.append('pdf', await stripPdfImages(file), file.name);
       const res = await fetch('/api/parse-pdf', { method: 'POST', body: formData });
-      if (res.status === 413) throw new Error('El PDF es demasiado grande para el servidor.');
+
+      // Guard against non-JSON responses (e.g. Vercel's plain-text 413, or an HTML error page)
+      const contentType = res.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        if (res.status === 413) throw new Error('El PDF es demasiado grande para el servidor (límite 4.5 MB). Comprímelo manualmente (p. ej. en ilovepdf.com) y vuelve a cargarlo.');
+        throw new Error(`Error del servidor (${res.status}).`);
+      }
+
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Error desconocido');
       return data;
     })()
   ]);
 
-  // Guardar base64 comprimido (o original si falló)
-  if (base64Result.status === 'fulfilled') {
-    currentPdfBase64 = base64Result.value;
+  // Guardar PDF comprimido (o original si falló)
+  if (blobResult.status === 'fulfilled') {
+    currentPdfBlob = blobResult.value;
   }
 
   // Manejar resultado del parse
@@ -394,17 +385,18 @@ async function saveToOdoo() {
   progressBar.style.animation = 'progress 6s ease forwards';
 
   try {
+    // El PDF va como multipart (binario), no base64 en JSON: evita ~37% de
+    // sobrepeso y hace menos probable chocar con el límite de 4.5 MB de Vercel.
+    const formData = new FormData();
+    formData.append('clientName', clientName);
+    if (selectedPartnerId) formData.append('partnerId', selectedPartnerId);
+    if (obra) formData.append('obra', obra);
+    formData.append('items', JSON.stringify(parsedItems));
+    if (currentPdfBlob) formData.append('pdf', currentPdfBlob, currentPdfFileName || 'cotizacion.pdf');
+
     const res = await fetch('/api/save-to-odoo', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        clientName,
-        partnerId: selectedPartnerId || null,
-        obra: obra || null,
-        items: parsedItems,
-        pdfBase64: currentPdfBase64,
-        pdfFileName: currentPdfFileName,
-      }),
+      body: formData,
     });
 
     // Guard against non-JSON responses (e.g. HTML error pages when session expired)
@@ -412,6 +404,9 @@ async function saveToOdoo() {
     if (!contentType.includes('application/json')) {
       if (res.status === 401) {
         throw new Error('Sesión expirada. Por favor vuelve a iniciar sesión.');
+      }
+      if (res.status === 413) {
+        throw new Error('El PDF sigue siendo muy grande para Vercel (límite 4.5 MB). Comprímelo manualmente (p. ej. en ilovepdf.com) y vuelve a cargarlo.');
       }
       throw new Error(`Error del servidor (${res.status}). Verifica que el servidor esté corriendo.`);
     }
