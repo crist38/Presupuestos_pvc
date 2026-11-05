@@ -5,6 +5,7 @@ let selectedPartnerId = null;
 let isSaving = false;
 let currentPdfBlob = null;
 let currentPdfFileName = null;
+let currentPdfFile = null; // archivo original, para re-comprimir sin imágenes si hace falta
 
 // ── DOM refs ─────────────────────────────────────────────────────────────────
 const dropZone       = document.getElementById('dropZone');
@@ -121,6 +122,7 @@ async function stripPdfImages(file) {
 async function handleFile(file) {
   // Guardar nombre y comprimir el PDF
   currentPdfFileName = file.name;
+  currentPdfFile = file;
   currentPdfBlob = null; // se llenará abajo de forma asíncrona
 
   // Show filename chip
@@ -384,20 +386,17 @@ async function saveToOdoo() {
   void progressBar.offsetWidth;
   progressBar.style.animation = 'progress 6s ease forwards';
 
-  try {
-    // El PDF va como multipart (binario), no base64 en JSON: evita ~37% de
-    // sobrepeso y hace menos probable chocar con el límite de 4.5 MB de Vercel.
+  // El PDF va como multipart (binario), no base64 en JSON: evita ~37% de
+  // sobrepeso y hace menos probable chocar con el límite de 4.5 MB de Vercel.
+  async function postSaveToOdoo(pdfBlob) {
     const formData = new FormData();
     formData.append('clientName', clientName);
     if (selectedPartnerId) formData.append('partnerId', selectedPartnerId);
     if (obra) formData.append('obra', obra);
     formData.append('items', JSON.stringify(parsedItems));
-    if (currentPdfBlob) formData.append('pdf', currentPdfBlob, currentPdfFileName || 'cotizacion.pdf');
+    if (pdfBlob) formData.append('pdf', pdfBlob, currentPdfFileName || 'cotizacion.pdf');
 
-    const res = await fetch('/api/save-to-odoo', {
-      method: 'POST',
-      body: formData,
-    });
+    const res = await fetch('/api/save-to-odoo', { method: 'POST', body: formData });
 
     // Guard against non-JSON responses (e.g. HTML error pages when session expired)
     const contentType = res.headers.get('content-type') || '';
@@ -406,7 +405,9 @@ async function saveToOdoo() {
         throw new Error('Sesión expirada. Por favor vuelve a iniciar sesión.');
       }
       if (res.status === 413) {
-        throw new Error('El PDF sigue siendo muy grande para Vercel (límite 4.5 MB). Comprímelo manualmente (p. ej. en ilovepdf.com) y vuelve a cargarlo.');
+        const err = new Error('El PDF sigue siendo muy grande para Vercel (límite 4.5 MB). Comprímelo manualmente (p. ej. en ilovepdf.com) y vuelve a cargarlo.');
+        err.pdfTooLarge = true;
+        throw err;
       }
       throw new Error(`Error del servidor (${res.status}). Verifica que el servidor esté corriendo.`);
     }
@@ -414,6 +415,29 @@ async function saveToOdoo() {
     const data = await res.json();
     if (res.status === 401) throw new Error('Sesión expirada. Por favor vuelve a iniciar sesión.');
     if (!res.ok) throw new Error(data.error || 'Error al guardar en Odoo');
+    return data;
+  }
+
+  try {
+    let data;
+    let savedWithoutImages = false;
+    try {
+      data = await postSaveToOdoo(currentPdfBlob);
+    } catch (err) {
+      // El PDF comprimido con imágenes sigue pesando demasiado: reintentar
+      // sin las imágenes para no perder la cotización completa en Odoo.
+      if (err.pdfTooLarge && currentPdfFile) {
+        const strippedBlob = await stripPdfImages(currentPdfFile);
+        data = await postSaveToOdoo(strippedBlob);
+        savedWithoutImages = true;
+      } else {
+        throw err;
+      }
+    }
+
+    if (savedWithoutImages) {
+      showToast('success', 'Guardado sin dibujos', 'El PDF era muy grande; se adjuntó una versión sin las imágenes del plano.');
+    }
 
     progressBar.style.width = '100%';
     progressLabel.textContent = '¡Guardado!';
